@@ -1,47 +1,46 @@
-# PickByMe MVP Scope
+# PickByMe MVP
 
 ## Goal
 
-Validate whether creator-led discovery can produce real transactions before building a large marketplace.
+Validate whether creator-led curation can drive real commerce across different offer types without locking PickByMe into one vertical too early.
 
-## Required first-loop capabilities
+## First working loop
 
-1. User accounts and roles.
-2. Creator profile with a public slug.
-3. Provider profile.
-4. Provider can create an Offer.
-5. Creator can select an Offer.
-6. Creator public page shows selected Offers.
-7. Customer can open an Offer from a creator page.
-8. The system records creator attribution.
-9. A transaction can be recorded.
-10. Creator and platform commissions can be calculated and stored.
+1. A provider registers and logs in.
+2. The provider publishes an offer.
+3. A creator registers and logs in.
+4. The creator discovers and selects the offer.
+5. The selected offer appears on the creator's public page.
+6. A future conversion is attributed to that creator.
+7. Commission is calculated from the conversion.
+
+## Current scope implemented
+
+- Accounts and role-specific profiles
+- Opaque Bearer authentication sessions
+- Offer creation and active-offer discovery
+- Creator offer selection
+- Public creator page
+- Conversion and commission domain models
+- PostgreSQL migrations
+- Docker development stack
+
+## Next product slice
+
+The next slice should add attribution and conversion capture before payment-provider integration. This lets PickByMe test the commercial loop even if the first transaction type is fulfilled externally.
+
+Recommended next sequence:
+
+`shareable creator link -> attribution token -> conversion event -> commission ledger -> provider/creator dashboards`
 
 ## Intentionally deferred
 
-- reviews and ratings
-- chat
-- loyalty points
-- recommendation AI
-- complex search
-- native mobile apps
-- advanced payouts
-- multi-country tax engine
-- warehouse logic
-- full booking engine
-- subscription plans
+- Final market category
+- Payment gateway
+- Payout automation
+- Shipping / fulfillment logic
+- Reservation-specific availability logic
+- Reviews and social features
+- Native mobile apps
 
-## Market-direction flexibility
-
-The MVP architecture must allow the first tested category to change without rewriting the core. The initial category can be physical products, services, reservations, or another offer type chosen after market validation.
-
-## Success signal
-
-The first milestone is not a large feature count. It is a complete attributed transaction where the system can answer:
-
-- who provided the offer?
-- which creator drove the customer?
-- what did the customer buy or reserve?
-- how much was the transaction worth?
-- what commission belongs to the creator?
-- what commission belongs to PickByMe?
+These should be driven by the first validated market rather than guessed during foundation work.
