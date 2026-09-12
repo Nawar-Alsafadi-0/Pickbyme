@@ -6,9 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import CreatorOffer, CreatorProfile, Offer, ProviderProfile
+from app.db.models import CreatorOffer, CreatorProfile, Offer, ProviderProfile, User
 from app.db.session import get_db
-from app.domain.enums import OfferStatus
+from app.dependencies import get_current_user
+from app.domain.enums import OfferStatus, UserRole
 from app.schemas import (
     CreatorOfferResponse,
     CreatorOfferSelectRequest,
@@ -22,11 +23,17 @@ router = APIRouter(tags=["offers"])
 @router.post("/offers", response_model=OfferResponse, status_code=status.HTTP_201_CREATED)
 def create_offer(
     payload: OfferCreateRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Offer:
-    provider = db.get(ProviderProfile, payload.provider_id)
+    if current_user.role != UserRole.PROVIDER:
+        raise HTTPException(status_code=403, detail="Provider account required")
+
+    provider = db.scalar(
+        select(ProviderProfile).where(ProviderProfile.user_id == current_user.id)
+    )
     if provider is None:
-        raise HTTPException(status_code=404, detail="Provider not found")
+        raise HTTPException(status_code=403, detail="Provider profile not found")
 
     offer = Offer(
         provider_id=provider.id,
@@ -48,32 +55,37 @@ def create_offer(
 def list_active_offers(db: Session = Depends(get_db)) -> list[Offer]:
     return list(
         db.scalars(
-            select(Offer).where(Offer.status == OfferStatus.ACTIVE).order_by(Offer.created_at.desc())
+            select(Offer)
+            .where(Offer.status == OfferStatus.ACTIVE)
+            .order_by(Offer.created_at.desc())
         )
     )
 
 
 @router.post(
-    "/creators/{creator_id}/offers/{offer_id}",
+    "/creator/offers/{offer_id}",
     response_model=CreatorOfferResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def select_offer(
-    creator_id: UUID,
     offer_id: UUID,
     payload: CreatorOfferSelectRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CreatorOfferResponse:
-    creator = db.get(CreatorProfile, creator_id)
+    if current_user.role != UserRole.CREATOR:
+        raise HTTPException(status_code=403, detail="Creator account required")
+
+    creator = db.scalar(select(CreatorProfile).where(CreatorProfile.user_id == current_user.id))
     if creator is None:
-        raise HTTPException(status_code=404, detail="Creator not found")
+        raise HTTPException(status_code=403, detail="Creator profile not found")
 
     offer = db.get(Offer, offer_id)
     if offer is None or offer.status != OfferStatus.ACTIVE:
         raise HTTPException(status_code=404, detail="Active offer not found")
 
     rate = payload.creator_rate if payload.creator_rate is not None else offer.default_creator_rate
-    if rate < Decimal("0") or rate > Decimal("100"):
+    if rate < Decimal(0) or rate > Decimal(100):
         raise HTTPException(status_code=422, detail="creator_rate must be between 0 and 100")
 
     selection = CreatorOffer(
