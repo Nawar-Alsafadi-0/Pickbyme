@@ -1,3 +1,4 @@
+import secrets
 from decimal import Decimal
 from uuid import UUID
 
@@ -29,9 +30,7 @@ def create_offer(
     if current_user.role != UserRole.PROVIDER:
         raise HTTPException(status_code=403, detail="Provider account required")
 
-    provider = db.scalar(
-        select(ProviderProfile).where(ProviderProfile.user_id == current_user.id)
-    )
+    provider = db.scalar(select(ProviderProfile).where(ProviderProfile.user_id == current_user.id))
     if provider is None:
         raise HTTPException(status_code=403, detail="Provider profile not found")
 
@@ -93,6 +92,7 @@ def select_offer(
         offer_id=offer.id,
         creator_rate=rate,
         is_featured=payload.is_featured,
+        tracking_code=secrets.token_urlsafe(18),
     )
     db.add(selection)
     try:
@@ -108,4 +108,5 @@ def select_offer(
         offer_id=selection.offer_id,
         creator_rate=selection.creator_rate,
         is_featured=selection.is_featured,
+        tracking_code=selection.tracking_code,
     )
