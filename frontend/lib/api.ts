@@ -1,5 +1,3 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
-
 export type Offer = {
   id: string;
   provider_id: string;
@@ -12,8 +10,15 @@ export type Offer = {
   default_creator_rate: string;
 };
 
+function apiBase(): string {
+  if (typeof window === "undefined") {
+    return process.env.API_INTERNAL_BASE ?? process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
+  }
+  return process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${apiBase()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
