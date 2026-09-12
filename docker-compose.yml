@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: pickbyme
+      POSTGRES_USER: pickbyme
+      POSTGRES_PASSWORD: pickbyme
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pickbyme -d pickbyme"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pickbyme_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://pickbyme:pickbyme@postgres:5432/pickbyme
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE: http://localhost:8000/api/v1
+    environment:
+      API_INTERNAL_BASE: http://api:8000/api/v1
+      NEXT_PUBLIC_API_BASE: http://localhost:8000/api/v1
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  pickbyme_postgres_data:
