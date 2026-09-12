@@ -6,7 +6,7 @@ from app.services.commission import calculate_commission
 
 
 def test_calculate_commission() -> None:
-    assert calculate_commission(Decimal("100.000"), Decimal("10")) == Decimal("10.000")
+    assert calculate_commission(Decimal("100.000"), Decimal(10)) == Decimal("10.000")
 
 
 def test_commission_rounding() -> None:
@@ -15,4 +15,4 @@ def test_commission_rounding() -> None:
 
 def test_invalid_commission_rate() -> None:
     with pytest.raises(ValueError):
-        calculate_commission(Decimal("10"), Decimal("101"))
+        calculate_commission(Decimal(10), Decimal(101))
