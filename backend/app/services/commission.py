@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 MONEY_QUANTUM = Decimal("0.001")
 
@@ -9,5 +9,5 @@ def calculate_commission(gross_amount: Decimal, rate_percent: Decimal) -> Decima
     if rate_percent < 0 or rate_percent > 100:
         raise ValueError("rate_percent must be between 0 and 100")
 
-    amount = gross_amount * (rate_percent / Decimal("100"))
+    amount = gross_amount * (rate_percent / Decimal(100))
     return amount.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
