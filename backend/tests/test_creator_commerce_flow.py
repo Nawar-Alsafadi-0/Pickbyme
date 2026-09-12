@@ -37,6 +37,15 @@ def client() -> Generator[TestClient, None, None]:
         engine.dispose()
 
 
+def auth_headers(client: TestClient, email: str, password: str) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert response.status_code == 200
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
     provider_response = client.post(
         "/api/v1/accounts/register",
@@ -50,12 +59,12 @@ def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
         },
     )
     assert provider_response.status_code == 201
-    provider_id = provider_response.json()["profile_id"]
 
+    provider_headers = auth_headers(client, "provider@example.com", "very-secure-password")
     offer_response = client.post(
         "/api/v1/offers",
+        headers=provider_headers,
         json={
-            "provider_id": provider_id,
             "title": "Signature Experience",
             "description": "A creator-selected experience.",
             "offer_type": "experience",
@@ -80,10 +89,11 @@ def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
         },
     )
     assert creator_response.status_code == 201
-    creator_id = creator_response.json()["profile_id"]
 
+    creator_headers = auth_headers(client, "creator@example.com", "another-secure-password")
     selection_response = client.post(
-        f"/api/v1/creators/{creator_id}/offers/{offer_id}",
+        f"/api/v1/creator/offers/{offer_id}",
+        headers=creator_headers,
         json={"is_featured": True},
     )
     assert selection_response.status_code == 201
@@ -97,3 +107,23 @@ def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
     assert len(page["offers"]) == 1
     assert page["offers"][0]["title"] == "Signature Experience"
     assert page["offers"][0]["is_featured"] is True
+
+
+def test_creator_cannot_create_provider_offer(client: TestClient) -> None:
+    client.post(
+        "/api/v1/accounts/register",
+        json={
+            "email": "creator2@example.com",
+            "display_name": "Creator Two",
+            "password": "another-secure-password",
+            "role": "creator",
+            "slug": "creator-two",
+        },
+    )
+    headers = auth_headers(client, "creator2@example.com", "another-secure-password")
+    response = client.post(
+        "/api/v1/offers",
+        headers=headers,
+        json={"title": "Nope", "offer_type": "product", "publish": True},
+    )
+    assert response.status_code == 403
