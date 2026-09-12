@@ -36,10 +36,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     token_hash = hash_token(credentials.credentials)
     auth_session = db.scalar(
         select(AuthSession).where(
