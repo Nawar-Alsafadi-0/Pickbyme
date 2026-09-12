@@ -1,5 +1,6 @@
 from collections.abc import Generator
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -10,7 +11,8 @@ from app.db.session import get_db
 from app.main import app
 
 
-def build_client() -> Generator[TestClient, None, None]:
+@pytest.fixture
+def client() -> Generator[TestClient, None, None]:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -35,9 +37,7 @@ def build_client() -> Generator[TestClient, None, None]:
         engine.dispose()
 
 
-def test_provider_to_creator_public_page_flow() -> None:
-    client = next(build_client())
-
+def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
     provider_response = client.post(
         "/api/v1/accounts/register",
         json={
