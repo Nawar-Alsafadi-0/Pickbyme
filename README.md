@@ -1,20 +1,38 @@
 # PickByMe
 
-PickByMe is a creator-led commerce platform where creators curate offers from brands and service providers, share them with their audience, and earn commission from attributed transactions.
+PickByMe is a creator-led commerce platform where providers publish offers and creators curate the offers they genuinely want to recommend to their audience.
 
-The platform is intentionally **offer-centric**, not product-centric. An offer may later represent a physical product, digital product, service, reservation, hotel stay, ticket, experience, or another commerce type.
+The platform is **offer-centric**, not product-centric. The same core is designed to support physical products, services, reservations, stays, tickets, experiences, and future commerce categories without rebuilding the business model.
 
-## Repository structure
+## Current foundation
 
-- `backend/` — backend foundation and future application code
-- `frontend/` — customer, creator, provider, and admin web surfaces
-- `docs/architecture.md` — domain and architecture foundation
-- `docs/mvp.md` — first validation scope
+The first working vertical slice is in place:
 
-## Core transaction loop
+- Provider and creator account registration
+- Secure password hashing with scrypt
+- Login/logout with opaque Bearer sessions
+- Provider-only offer creation
+- Public active-offer discovery
+- Creator-only offer selection
+- Public creator storefront endpoint
+- Conversion and commission domain models
+- PostgreSQL + SQLAlchemy
+- Alembic migrations
+- Docker Compose development stack
+- pytest + Ruff CI
 
-Provider creates an offer -> Creator selects it -> Customer discovers it through the creator -> Transaction is attributed -> Commission is calculated.
+## Core flow
 
-## Current status
+`Provider -> Offer -> Creator selection -> Creator storefront -> Customer conversion -> Commission`
 
-Foundation only. No framework, payment provider, or first commerce category is locked in yet.
+The first market category and checkout/payment provider are intentionally not locked in yet.
+
+## Run
+
+```bash
+docker compose up --build
+```
+
+Then open `http://localhost:8000/docs`.
+
+See `backend/README.md` for backend setup and API details.
