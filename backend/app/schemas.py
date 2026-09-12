@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,6 +17,11 @@ class RegisterAccountRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=1000)
 
 
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+    password: str = Field(min_length=8, max_length=128)
+
+
 class AccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,8 +37,14 @@ class ProfileRegistrationResponse(BaseModel):
     slug: str | None = None
 
 
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: datetime
+    account: AccountResponse
+
+
 class OfferCreateRequest(BaseModel):
-    provider_id: UUID
     title: str = Field(min_length=2, max_length=180)
     description: str | None = Field(default=None, max_length=5000)
     offer_type: OfferType
