@@ -1,8 +1,7 @@
-from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -24,7 +23,7 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    expires_at: Mapped[object] = mapped_column(index=True)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
@@ -67,10 +66,12 @@ class CreatorOffer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     offer_id: Mapped[UUID] = mapped_column(ForeignKey("offers.id", ondelete="CASCADE"), index=True)
     creator_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2))
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tracking_code: Mapped[str] = mapped_column(String(48), unique=True, index=True)
 
 
 class Conversion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "conversions"
+    __table_args__ = (UniqueConstraint("external_reference", name="uq_conversion_external_reference"),)
 
     offer_id: Mapped[UUID] = mapped_column(ForeignKey("offers.id", ondelete="RESTRICT"), index=True)
     creator_id: Mapped[UUID] = mapped_column(ForeignKey("creator_profiles.id", ondelete="RESTRICT"), index=True)
