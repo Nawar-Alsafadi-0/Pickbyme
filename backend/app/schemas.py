@@ -4,7 +4,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.enums import OfferStatus, OfferType, UserRole
+from app.domain.enums import (
+    CommissionStatus,
+    ConversionStatus,
+    OfferStatus,
+    OfferType,
+    UserRole,
+)
 
 
 class RegisterAccountRequest(BaseModel):
@@ -79,6 +85,7 @@ class CreatorOfferResponse(BaseModel):
     offer_id: UUID
     creator_rate: Decimal
     is_featured: bool
+    tracking_code: str
 
 
 class PublicCreatorOffer(BaseModel):
@@ -89,6 +96,7 @@ class PublicCreatorOffer(BaseModel):
     price: Decimal | None
     currency: str
     is_featured: bool
+    tracking_code: str
 
 
 class PublicCreatorPage(BaseModel):
@@ -97,3 +105,29 @@ class PublicCreatorPage(BaseModel):
     display_name: str
     bio: str | None
     offers: list[PublicCreatorOffer]
+
+
+class ConversionCreateRequest(BaseModel):
+    tracking_code: str = Field(min_length=8, max_length=48)
+    gross_amount: Decimal = Field(gt=0)
+    currency: str = Field(default="OMR", min_length=3, max_length=3)
+    external_reference: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class ConversionResponse(BaseModel):
+    id: UUID
+    offer_id: UUID
+    creator_id: UUID
+    gross_amount: Decimal
+    currency: str
+    status: ConversionStatus
+    commission_amount: Decimal
+    commission_rate: Decimal
+    commission_status: CommissionStatus
+
+
+class DashboardSummary(BaseModel):
+    conversions: int
+    gross_amount: Decimal
+    commission_amount: Decimal
+    currency: str = "OMR"
