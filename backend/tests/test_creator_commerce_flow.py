@@ -46,7 +46,7 @@ def auth_headers(client: TestClient, email: str, password: str) -> dict[str, str
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
+def test_provider_to_creator_conversion_and_dashboard_flow(client: TestClient) -> None:
     provider_response = client.post(
         "/api/v1/accounts/register",
         json={
@@ -97,7 +97,10 @@ def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
         json={"is_featured": True},
     )
     assert selection_response.status_code == 201
-    assert selection_response.json()["creator_rate"] == "10.00"
+    selection = selection_response.json()
+    assert selection["creator_rate"] == "10.00"
+    tracking_code = selection["tracking_code"]
+    assert tracking_code
 
     page_response = client.get("/api/v1/creators/nawar-picks")
     assert page_response.status_code == 200
@@ -106,7 +109,48 @@ def test_provider_to_creator_public_page_flow(client: TestClient) -> None:
     assert page["slug"] == "nawar-picks"
     assert len(page["offers"]) == 1
     assert page["offers"][0]["title"] == "Signature Experience"
-    assert page["offers"][0]["is_featured"] is True
+    assert page["offers"][0]["tracking_code"] == tracking_code
+
+    conversion_response = client.post(
+        "/api/v1/conversions",
+        headers=provider_headers,
+        json={
+            "tracking_code": tracking_code,
+            "gross_amount": "25.000",
+            "currency": "OMR",
+            "external_reference": "ORDER-1001",
+        },
+    )
+    assert conversion_response.status_code == 201
+    conversion = conversion_response.json()
+    assert conversion["commission_amount"] == "2.500"
+    assert conversion["commission_status"] == "earned"
+
+    creator_dashboard = client.get("/api/v1/dashboard/creator", headers=creator_headers)
+    assert creator_dashboard.status_code == 200
+    creator_summary = creator_dashboard.json()
+    assert creator_summary["conversions"] == 1
+    assert creator_summary["gross_amount"] == "25.000"
+    assert creator_summary["commission_amount"] == "2.500"
+
+    provider_dashboard = client.get("/api/v1/dashboard/provider", headers=provider_headers)
+    assert provider_dashboard.status_code == 200
+    provider_summary = provider_dashboard.json()
+    assert provider_summary["conversions"] == 1
+    assert provider_summary["gross_amount"] == "25.000"
+    assert provider_summary["commission_amount"] == "2.500"
+
+    duplicate_response = client.post(
+        "/api/v1/conversions",
+        headers=provider_headers,
+        json={
+            "tracking_code": tracking_code,
+            "gross_amount": "25.000",
+            "currency": "OMR",
+            "external_reference": "ORDER-1001",
+        },
+    )
+    assert duplicate_response.status_code == 409
 
 
 def test_creator_cannot_create_provider_offer(client: TestClient) -> None:
