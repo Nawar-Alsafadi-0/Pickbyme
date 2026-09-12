@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.routes.accounts import router as accounts_router
+from app.routes.auth import router as auth_router
 from app.routes.creators import router as creators_router
 from app.routes.offers import router as offers_router
 
@@ -13,5 +14,6 @@ def health() -> dict[str, str]:
 
 
 router.include_router(accounts_router)
+router.include_router(auth_router)
 router.include_router(offers_router)
 router.include_router(creators_router)
