@@ -39,3 +39,11 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
     return hmac.compare_digest(digest.hex(), expected_hex)
+
+
+def issue_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
