@@ -57,19 +57,18 @@ def create_conversion(
         status=ConversionStatus.CONFIRMED,
     )
     db.add(conversion)
-    db.flush()
-
-    commission = Commission(
-        conversion_id=conversion.id,
-        creator_id=selection.creator_id,
-        rate=selection.creator_rate,
-        amount=commission_amount,
-        currency=currency,
-        status=CommissionStatus.EARNED,
-    )
-    db.add(commission)
 
     try:
+        db.flush()
+        commission = Commission(
+            conversion_id=conversion.id,
+            creator_id=selection.creator_id,
+            rate=selection.creator_rate,
+            amount=commission_amount,
+            currency=currency,
+            status=CommissionStatus.EARNED,
+        )
+        db.add(commission)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
