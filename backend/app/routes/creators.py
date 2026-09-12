@@ -39,6 +39,7 @@ def public_creator_page(slug: str, db: Session = Depends(get_db)) -> PublicCreat
             price=offer.price,
             currency=offer.currency,
             is_featured=selection.is_featured,
+            tracking_code=selection.tracking_code,
         )
         for selection, offer in rows
     ]
