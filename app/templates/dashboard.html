@@ -25,10 +25,12 @@
 
   <div id="app-panel" hidden>
     <header class="dash-head">
-      <div><p class="eyebrow">CONTROL CENTER</p><h1 id="welcome">Dashboard</h1></div>
+      <div><p class="eyebrow">CONTROL CENTER</p><h1 id="welcome">Dashboard</h1><p id="verification-line"></p></div>
       <button id="logout" class="secondary">Log out</button>
     </header>
+
     <div id="metrics" class="metric-grid"></div>
+
     <section id="brand-panel" hidden>
       <div class="panel">
         <h2>Create an offer</h2>
@@ -45,19 +47,33 @@
         <div class="panel"><h2>Orders</h2><div id="brand-orders" class="list"></div></div>
       </div>
     </section>
+
     <section id="creator-panel" hidden>
+      <div class="panel payout-panel">
+        <div><h2>Creator wallet</h2><p id="wallet-copy">Your commissions become withdrawable after a completed order.</p></div>
+        <button id="payout-button">Request payout</button>
+      </div>
       <div class="split-grid">
         <div class="panel"><h2>Marketplace</h2><div id="marketplace" class="list"></div></div>
         <div class="panel"><h2>Your picks</h2><div id="creator-links" class="list"></div></div>
       </div>
+      <div class="panel"><h2>Payout history</h2><div id="creator-payouts" class="list"></div></div>
     </section>
+
+    <section id="admin-panel" hidden>
+      <div class="split-grid">
+        <div class="panel"><h2>Verification queue</h2><div id="verification-queue" class="list"></div></div>
+        <div class="panel"><h2>Payout queue</h2><div id="payout-queue" class="list"></div></div>
+      </div>
+    </section>
+
     <p id="status" class="status"></p>
   </div>
 </section>
 <script>
 const tokenKey='pickbyme_token', roleKey='pickbyme_role';
 const $=id=>document.getElementById(id);
-const money=(minor,currency)=>currency==='OMR' ? (minor/1000).toFixed(3)+' OMR' : (minor/100).toFixed(2)+' '+currency;
+const money=(minor,currency='OMR')=>currency==='OMR' ? (minor/1000).toFixed(3)+' OMR' : (minor/100).toFixed(2)+' '+currency;
 async function api(path, opts={}){
   const token=localStorage.getItem(tokenKey);
   const headers={'Content-Type':'application/json', ...(opts.headers||{})};
@@ -75,25 +91,60 @@ document.querySelector('#register-form [name="role"]').onchange=e=>{const c=e.ta
 $('login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{saveAuth(await api('/api/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))}));}catch(err){setStatus(err.message);}};
 $('register-form').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{saveAuth(await api('/api/auth/register',{method:'POST',body:JSON.stringify(f)}));}catch(err){setStatus(err.message);}};
 $('offer-form').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{await api('/api/offers',{method:'POST',body:JSON.stringify({title:f.title,description:f.description,price_minor:Math.round(Number(f.price)*1000),currency:'OMR',creator_commission_bps:Math.round(Number(f.creator_commission)*100),platform_fee_bps:1000})});e.target.reset();setStatus('Offer published.');await loadBrand();}catch(err){setStatus(err.message);}};
+$('payout-button').onclick=async()=>{try{const x=await api('/api/creator/payouts',{method:'POST',body:JSON.stringify({payout_method:'manual'})});setStatus('Payout #'+x.id+' requested for '+money(x.amount_minor,x.currency));await loadCreator();}catch(err){setStatus(err.message);}};
 async function confirmOrder(id){try{await api('/api/orders/'+id+'/confirm',{method:'POST'});setStatus('Order confirmed and commissions calculated.');await loadBrand();}catch(err){setStatus(err.message);}}
+async function refundOrder(id){try{await api('/api/orders/'+id+'/refund',{method:'POST'});setStatus('Order refunded and commission reversed.');await loadBrand();}catch(err){setStatus(err.message);}}
 async function joinOffer(id){try{const x=await api('/api/offers/'+id+'/join',{method:'POST'});setStatus('Added to your store: '+x.store_url);await loadCreator();}catch(err){setStatus(err.message);}}
-function metrics(items){$('metrics').innerHTML=items.map(([k,v])=>`<div class="metric"><span>${k}</span><strong>${v}</strong></div>`).join('');}
+async function verify(kind,id,status){try{await api('/api/admin/verifications/'+kind+'/'+id,{method:'POST',body:JSON.stringify({status,note:''})});setStatus('Verification updated.');await loadAdmin();}catch(err){setStatus(err.message);}}
+async function payPayout(id){const ref=prompt('Payment reference (optional)')||'';try{await api('/api/admin/payouts/'+id+'/pay',{method:'POST',body:JSON.stringify({payout_reference:ref})});setStatus('Payout marked paid.');await loadAdmin();}catch(err){setStatus(err.message);}}
+async function rejectPayout(id){try{await api('/api/admin/payouts/'+id+'/reject',{method:'POST'});setStatus('Payout rejected and balance returned.');await loadAdmin();}catch(err){setStatus(err.message);}}
+function metrics(items){$('metrics').innerHTML=items.map(([k,v])=>'<div class="metric"><span>'+k+'</span><strong>'+v+'</strong></div>').join('');}
+function verificationText(status){return status==='approved'?'Verified account':status==='rejected'?'Verification rejected':'Verification pending — selling actions stay locked until approval.';}
+
 async function loadBrand(){
   const [stats,offers,orders]=await Promise.all([api('/api/brand/dashboard'),api('/api/brand/offers'),api('/api/brand/orders')]);
-  metrics([['Offers',stats.offers],['Orders',stats.orders],['Gross sales',money(stats.gross_sales_minor,'OMR')],['Brand net',money(stats.brand_net_minor,'OMR')]]);
-  $('brand-offers').innerHTML=offers.map(o=>`<div class="row"><div><strong>${o.title}</strong><small>${money(o.price_minor,o.currency)} · Creator ${(o.creator_commission_bps/100).toFixed(1)}%</small></div><span class="badge">${o.status}</span></div>`).join('')||'<p>No offers yet.</p>';
-  $('brand-orders').innerHTML=orders.map(o=>`<div class="row"><div><strong>${o.offer_title}</strong><small>@${o.creator_slug} · ${o.buyer_name} · ${money(o.amount_minor,o.currency)}</small></div>${o.status==='pending'?`<button onclick="confirmOrder(${o.id})">Confirm</button>`:`<span class="badge">${o.status}</span>`}</div>`).join('')||'<p>No orders yet.</p>';
+  $('verification-line').textContent=verificationText(stats.verification_status);
+  metrics([['Offers',stats.offers],['Orders',stats.orders],['Gross sales',money(stats.gross_sales_minor)],['Brand net',money(stats.brand_net_minor)]]);
+  $('brand-offers').innerHTML=offers.map(o=>'<div class="row"><div><strong>'+o.title+'</strong><small>'+money(o.price_minor,o.currency)+' · Creator '+(o.creator_commission_bps/100).toFixed(1)+'%</small></div><span class="badge">'+o.status+'</span></div>').join('')||'<p>No offers yet.</p>';
+  $('brand-orders').innerHTML=orders.map(o=>'<div class="row"><div><strong>'+o.offer_title+'</strong><small>@'+o.creator_slug+' · '+o.buyer_name+' · '+money(o.amount_minor,o.currency)+'</small></div><div class="actions">'+(o.status==='pending'?'<button onclick="confirmOrder('+o.id+')">Confirm</button>':o.status==='completed'?'<button class="secondary" onclick="refundOrder('+o.id+')">Refund</button>':'<span class="badge">'+o.status+'</span>')+'</div></div>').join('')||'<p>No orders yet.</p>';
 }
+
 async function loadCreator(){
-  const [stats,offers]=await Promise.all([api('/api/creator/dashboard'),api('/api/offers')]);
-  metrics([['Picks',stats.offers],['Sales',money(stats.sales_minor,'OMR')],['Earnings',money(stats.earnings_minor,'OMR')],['Store','/'+stats.slug]]);
+  const [stats,offers,payouts]=await Promise.all([api('/api/creator/dashboard'),api('/api/offers'),api('/api/creator/payouts')]);
+  $('verification-line').textContent=verificationText(stats.verification_status);
+  metrics([['Picks',stats.offers],['Sales',money(stats.sales_minor)],['Available',money(stats.available_balance_minor)],['Paid out',money(stats.paid_out_minor)]]);
+  $('wallet-copy').textContent='Available '+money(stats.available_balance_minor)+' · Reserved '+money(stats.reserved_balance_minor)+' · Lifetime earnings '+money(stats.earnings_minor);
+  $('payout-button').disabled=stats.available_balance_minor<=0 || stats.verification_status!=='approved';
   const joined=new Set(stats.links.map(x=>x.offer_id));
-  $('marketplace').innerHTML=offers.map(o=>`<div class="row"><div><strong>${o.title}</strong><small>${money(o.price_minor,o.currency)} · Earn ${(o.creator_commission_bps/100).toFixed(1)}%</small></div>${joined.has(o.id)?'<span class="badge">Added</span>':`<button onclick="joinOffer(${o.id})">Add</button>`}</div>`).join('')||'<p>No offers available.</p>';
-  $('creator-links').innerHTML=stats.links.map(x=>`<div class="row"><div><strong>${x.title}</strong><small>Code ${x.tracking_code}</small></div><a class="button-link" href="${x.store_url}">Open store</a></div>`).join('')||'<p>No picks yet.</p>';
+  $('marketplace').innerHTML=offers.map(o=>'<div class="row"><div><strong>'+o.title+'</strong><small>'+money(o.price_minor,o.currency)+' · Earn '+(o.creator_commission_bps/100).toFixed(1)+'%</small></div>'+(joined.has(o.id)?'<span class="badge">Added</span>':'<button onclick="joinOffer('+o.id+')">Add</button>')+'</div>').join('')||'<p>No offers available.</p>';
+  $('creator-links').innerHTML=stats.links.map(x=>'<div class="row"><div><strong>'+x.title+'</strong><small>Code '+x.tracking_code+'</small></div><a class="button-link" href="'+x.store_url+'">Open store</a></div>').join('')||'<p>No picks yet.</p>';
+  $('creator-payouts').innerHTML=payouts.map(x=>'<div class="row"><div><strong>'+money(x.amount_minor,x.currency)+'</strong><small>'+x.payout_method+(x.payout_reference?' · '+x.payout_reference:'')+'</small></div><span class="badge">'+x.status+'</span></div>').join('')||'<p>No payout requests yet.</p>';
 }
+
+async function loadAdmin(){
+  $('verification-line').textContent='Administrator';
+  const [stats,queue,payouts]=await Promise.all([api('/api/admin/stats'),api('/api/admin/verifications'),api('/api/admin/payouts')]);
+  metrics([['Users',stats.users],['Pending verification',stats.pending_verifications],['Pending payouts',stats.pending_payouts],['Platform revenue',money(stats.platform_revenue_minor)]]);
+  const people=[
+    ...queue.brands.map(x=>({...x,kind:'brand'})),
+    ...queue.creators.map(x=>({...x,kind:'creator'}))
+  ].filter(x=>x.status==='pending');
+  $('verification-queue').innerHTML=people.map(x=>'<div class="row"><div><strong>'+x.name+'</strong><small>'+x.email+' · '+x.kind+'</small></div><div class="actions"><button onclick="verify(\''+x.kind+'\','+x.profile_id+',\'approved\')">Approve</button><button class="secondary" onclick="verify(\''+x.kind+'\','+x.profile_id+',\'rejected\')">Reject</button></div></div>').join('')||'<p>No pending verifications.</p>';
+  $('payout-queue').innerHTML=payouts.filter(x=>x.status==='requested').map(x=>'<div class="row"><div><strong>@'+x.creator+' · '+money(x.amount_minor,x.currency)+'</strong><small>'+x.email+' · '+x.method+'</small></div><div class="actions"><button onclick="payPayout('+x.id+')">Mark paid</button><button class="secondary" onclick="rejectPayout('+x.id+')">Reject</button></div></div>').join('')||'<p>No pending payouts.</p>';
+}
+
 async function renderApp(){
   const token=localStorage.getItem(tokenKey);if(!token)return;
-  try{const me=await api('/api/me');$('auth-panel').hidden=true;$('app-panel').hidden=false;$('welcome').textContent='Hi, '+me.display_name;$('brand-panel').hidden=me.role!=='brand';$('creator-panel').hidden=me.role!=='creator';if(me.role==='brand')await loadBrand();else await loadCreator();}catch(e){logout();}
+  try{
+    const me=await api('/api/me');
+    $('auth-panel').hidden=true;$('app-panel').hidden=false;$('welcome').textContent='Hi, '+me.display_name;
+    $('brand-panel').hidden=me.role!=='brand';
+    $('creator-panel').hidden=me.role!=='creator';
+    $('admin-panel').hidden=me.role!=='admin';
+    if(me.role==='brand')await loadBrand();
+    else if(me.role==='creator')await loadCreator();
+    else if(me.role==='admin')await loadAdmin();
+  }catch(e){logout();}
 }
 renderApp();
 </script>
