@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}PickByMe — creator commerce{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">CREATOR COMMERCE OS</p>
+  <h1>Brands sell through creators. Creators earn from real sales.</h1>
+  <p>PickByMe turns offers into trackable creator storefronts with automatic attribution and commission accounting.</p>
+</section>
+<section>
+  <h2>Live offers</h2>
+  <div class="grid">
+  {% for offer in offers %}
+    <article class="card">
+      <span>{{ offer.currency }}</span>
+      <h3>{{ offer.title }}</h3>
+      <p>{{ offer.description }}</p>
+      <strong>{{ '%.3f'|format(offer.price_minor / 1000) if offer.currency == 'OMR' else '%.2f'|format(offer.price_minor / 100) }}</strong>
+      <small>Creator commission: {{ offer.creator_commission_bps / 100 }}%</small>
+    </article>
+  {% else %}
+    <article class="card"><h3>No offers yet</h3><p>Create a brand account through the API and publish the first one.</p></article>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}
