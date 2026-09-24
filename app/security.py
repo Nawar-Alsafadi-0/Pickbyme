@@ -13,7 +13,7 @@ ALGORITHM = "HS256"
 def hash_password(password: str) -> str:
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 210_000)
-    return f"pbkdf2_sha256$${base64.b64encode(salt).decode()}$${base64.b64encode(digest).decode()}"
+    return "pbkdf2_sha256$" + base64.b64encode(salt).decode() + "$" + base64.b64encode(digest).decode()
 
 
 def verify_password(password: str, encoded: str) -> bool:
