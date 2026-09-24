@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ creator.slug }} — PickByMe{% endblock %}
+{% block content %}
+<section class="hero compact">
+  <p class="eyebrow">CREATOR STORE</p>
+  <h1>@{{ creator.slug }}</h1>
+  <p>{{ creator.bio or 'Curated picks and experiences.' }}</p>
+</section>
+<section class="grid">
+{% for link, offer in rows %}
+  <article class="card">
+    <h3>{{ offer.title }}</h3>
+    <p>{{ offer.description }}</p>
+    <strong>{{ offer.currency }} {{ '%.3f'|format(offer.price_minor / 1000) if offer.currency == 'OMR' else '%.2f'|format(offer.price_minor / 100) }}</strong>
+    <small>Tracking code: {{ link.tracking_code }}</small>
+  </article>
+{% else %}
+  <article class="card"><h3>No picks yet</h3></article>
+{% endfor %}
+</section>
+{% endblock %}
