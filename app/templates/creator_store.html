@@ -15,7 +15,7 @@
     <form class="checkout" data-code="{{ link.tracking_code }}">
       <input name="buyer_name" placeholder="Your name" required>
       <input name="buyer_email" type="email" placeholder="Email" required>
-      <button type="submit">Place order</button>
+      <button type="submit">Checkout</button>
       <small class="checkout-status"></small>
     </form>
   </article>
@@ -25,12 +25,40 @@
 </section>
 <script>
 document.querySelectorAll('.checkout').forEach(form=>form.addEventListener('submit',async e=>{
-  e.preventDefault(); const data=Object.fromEntries(new FormData(form));
-  const status=form.querySelector('.checkout-status'); status.textContent='Creating order...';
-  const res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...data,tracking_code:form.dataset.code})});
-  const body=await res.json();
-  status.textContent=res.ok?'Order #'+body.order_id+' created. Awaiting confirmation.':(body.detail||'Could not create order.');
-  if(res.ok) form.reset();
+  e.preventDefault();
+  const status=form.querySelector('.checkout-status');
+  const button=form.querySelector('button');
+  const data=Object.fromEntries(new FormData(form));
+  button.disabled=true;
+  status.textContent='Creating order...';
+  try{
+    const orderRes=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...data,tracking_code:form.dataset.code})});
+    const order=await orderRes.json();
+    if(!orderRes.ok) throw new Error(order.detail||'Could not create order.');
+
+    status.textContent='Opening secure payment...';
+    const checkoutRes=await fetch('/api/orders/'+order.order_id+'/checkout',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({checkout_key:order.checkout_key})
+    });
+    const checkout=await checkoutRes.json();
+    if(checkoutRes.ok && checkout.checkout_url){
+      window.location.assign(checkout.checkout_url);
+      return;
+    }
+
+    if(checkoutRes.status===503){
+      status.textContent='Order #'+order.order_id+' created. Online payment is not enabled yet; the brand can confirm it manually.';
+      form.reset();
+      return;
+    }
+    throw new Error(checkout.detail||'Could not start payment.');
+  }catch(err){
+    status.textContent=err.message;
+  }finally{
+    button.disabled=false;
+  }
 }));
 </script>
 {% endblock %}
