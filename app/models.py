@@ -11,6 +11,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(512))
     role: Mapped[str] = mapped_column(String(20), index=True)
     display_name: Mapped[str] = mapped_column(String(120))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -19,7 +20,8 @@ class BrandProfile(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
     business_name: Mapped[str] = mapped_column(String(160))
-    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verification_status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    verification_note: Mapped[str] = mapped_column(Text, default="")
 
 
 class CreatorProfile(Base):
@@ -29,7 +31,8 @@ class CreatorProfile(Base):
     slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     bio: Mapped[str] = mapped_column(Text, default="")
     city: Mapped[str] = mapped_column(String(100), default="")
-    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verification_status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    verification_note: Mapped[str] = mapped_column(Text, default="")
 
 
 class Offer(Base):
@@ -67,7 +70,24 @@ class Order(Base):
     amount_minor: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3))
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    payment_provider: Mapped[str] = mapped_column(String(40), default="manual")
+    payment_reference: Mapped[str] = mapped_column(String(160), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Payout(Base):
+    __tablename__ = "payouts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creator_profiles.id"), index=True)
+    amount_minor: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default="OMR")
+    status: Mapped[str] = mapped_column(String(20), default="requested", index=True)
+    payout_method: Mapped[str] = mapped_column(String(40), default="manual")
+    payout_reference: Mapped[str] = mapped_column(String(160), default="")
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Commission(Base):
@@ -75,7 +95,9 @@ class Commission(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), unique=True, index=True)
     creator_id: Mapped[int] = mapped_column(ForeignKey("creator_profiles.id"), index=True)
+    payout_id: Mapped[int | None] = mapped_column(ForeignKey("payouts.id"), nullable=True, index=True)
     creator_amount_minor: Mapped[int] = mapped_column(Integer)
     platform_amount_minor: Mapped[int] = mapped_column(Integer)
     brand_net_minor: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    status: Mapped[str] = mapped_column(String(20), default="available", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
