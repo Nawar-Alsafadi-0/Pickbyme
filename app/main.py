@@ -92,6 +92,11 @@ def home(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request=request, name="home.html", context={"offers": offers})
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    return templates.TemplateResponse(request=request, name="dashboard.html", context={})
+
+
 @app.get("/c/{slug}", response_class=HTMLResponse)
 def creator_store(slug: str, request: Request, db: Session = Depends(get_db)):
     creator = db.scalar(select(CreatorProfile).where(CreatorProfile.slug == slug))
@@ -203,14 +208,34 @@ def join_offer(offer_id: int, user: User = Depends(require_role("creator")), db:
 @app.get("/api/creator/dashboard")
 def creator_dashboard(user: User = Depends(require_role("creator")), db: Session = Depends(get_db)):
     creator = db.scalar(select(CreatorProfile).where(CreatorProfile.user_id == user.id))
-    links = db.scalars(select(CreatorOffer).where(CreatorOffer.creator_id == creator.id)).all()
+    rows = db.execute(
+        select(CreatorOffer, Offer)
+        .join(Offer, Offer.id == CreatorOffer.offer_id)
+        .where(CreatorOffer.creator_id == creator.id)
+        .order_by(CreatorOffer.id.desc())
+    ).all()
     total_sales = db.scalar(
         select(func.coalesce(func.sum(Order.amount_minor), 0))
         .join(CreatorOffer, Order.creator_offer_id == CreatorOffer.id)
         .where(CreatorOffer.creator_id == creator.id, Order.status == "completed")
     ) or 0
     earnings = db.scalar(select(func.coalesce(func.sum(Commission.creator_amount_minor), 0)).where(Commission.creator_id == creator.id)) or 0
-    return {"slug": creator.slug, "offers": len(links), "sales_minor": total_sales, "earnings_minor": earnings}
+    return {
+        "slug": creator.slug,
+        "offers": len(rows),
+        "sales_minor": total_sales,
+        "earnings_minor": earnings,
+        "links": [
+            {
+                "offer_id": offer.id,
+                "title": offer.title,
+                "tracking_code": link.tracking_code,
+                "store_url": f"/c/{creator.slug}",
+                "active": link.active,
+            }
+            for link, offer in rows
+        ],
+    }
 
 
 @app.post("/api/orders", status_code=201)
@@ -265,6 +290,50 @@ def confirm_order(order_id: int, user: User = Depends(require_role("brand", "adm
     return {"order_id": order.id, "status": order.status}
 
 
+@app.get("/api/brand/offers")
+def brand_offers(user: User = Depends(require_role("brand")), db: Session = Depends(get_db)):
+    brand = db.scalar(select(BrandProfile).where(BrandProfile.user_id == user.id))
+    offers = db.scalars(select(Offer).where(Offer.brand_id == brand.id).order_by(Offer.id.desc())).all()
+    return [
+        {
+            "id": offer.id,
+            "title": offer.title,
+            "price_minor": offer.price_minor,
+            "currency": offer.currency,
+            "creator_commission_bps": offer.creator_commission_bps,
+            "platform_fee_bps": offer.platform_fee_bps,
+            "status": offer.status,
+        }
+        for offer in offers
+    ]
+
+
+@app.get("/api/brand/orders")
+def brand_orders(user: User = Depends(require_role("brand")), db: Session = Depends(get_db)):
+    brand = db.scalar(select(BrandProfile).where(BrandProfile.user_id == user.id))
+    rows = db.execute(
+        select(Order, Offer, CreatorProfile)
+        .join(Offer, Offer.id == Order.offer_id)
+        .join(CreatorOffer, CreatorOffer.id == Order.creator_offer_id)
+        .join(CreatorProfile, CreatorProfile.id == CreatorOffer.creator_id)
+        .where(Offer.brand_id == brand.id)
+        .order_by(Order.id.desc())
+    ).all()
+    return [
+        {
+            "id": order.id,
+            "offer_title": offer.title,
+            "creator_slug": creator.slug,
+            "buyer_name": order.buyer_name,
+            "buyer_email": order.buyer_email,
+            "amount_minor": order.amount_minor,
+            "currency": order.currency,
+            "status": order.status,
+        }
+        for order, offer, creator in rows
+    ]
+
+
 @app.get("/api/brand/dashboard")
 def brand_dashboard(user: User = Depends(require_role("brand")), db: Session = Depends(get_db)):
     brand = db.scalar(select(BrandProfile).where(BrandProfile.user_id == user.id))
@@ -272,7 +341,10 @@ def brand_dashboard(user: User = Depends(require_role("brand")), db: Session = D
     if not offer_ids:
         return {"offers": 0, "orders": 0, "gross_sales_minor": 0, "brand_net_minor": 0}
     orders = db.scalar(select(func.count(Order.id)).where(Order.offer_id.in_(offer_ids))) or 0
-    gross = db.scalar(select(func.coalesce(func.sum(Order.amount_minor), 0)).where(Order.offer_id.in_(offer_ids))) or 0
+    gross = db.scalar(
+        select(func.coalesce(func.sum(Order.amount_minor), 0))
+        .where(Order.offer_id.in_(offer_ids), Order.status == "completed")
+    ) or 0
     net = db.scalar(
         select(func.coalesce(func.sum(Commission.brand_net_minor), 0))
         .join(Order, Commission.order_id == Order.id)
