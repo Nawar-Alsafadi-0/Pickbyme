@@ -126,6 +126,12 @@ def test_full_verified_commerce_finance_flow():
         "buyer_email": "buyer1@example.com",
     })
     assert order1.status_code == 201
+    checkout = client.post(
+        f"/api/orders/{order1.json()['order_id']}/checkout",
+        json={"checkout_key": order1.json()["checkout_key"]},
+    )
+    assert checkout.status_code == 503
+
     confirmed1 = client.post(f"/api/orders/{order1.json()['order_id']}/confirm", headers=brand_headers)
     assert confirmed1.status_code == 200
 
