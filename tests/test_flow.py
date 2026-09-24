@@ -49,14 +49,28 @@ def test_full_creator_commerce_flow():
     assert joined.status_code == 201
     tracking_code = joined.json()["tracking_code"]
 
+    dashboard_page = client.get("/dashboard")
+    assert dashboard_page.status_code == 200
+
+    brand_offers = client.get("/api/brand/offers", headers=brand_headers)
+    assert brand_offers.status_code == 200
+    assert len(brand_offers.json()) == 1
+
     order = client.post("/api/orders", json={"tracking_code":tracking_code,"buyer_name":"Buyer One","buyer_email":"buyer@example.com"})
     assert order.status_code == 201
     assert order.json()["amount_minor"] == 25000
     assert order.json()["status"] == "pending"
 
+    brand_orders = client.get("/api/brand/orders", headers=brand_headers)
+    assert brand_orders.status_code == 200
+    assert brand_orders.json()[0]["status"] == "pending"
+
     confirmed = client.post(f"/api/orders/{order.json()['order_id']}/confirm", headers=brand_headers)
     assert confirmed.status_code == 200
     assert confirmed.json()["status"] == "completed"
+
+    brand_orders = client.get("/api/brand/orders", headers=brand_headers)
+    assert brand_orders.json()[0]["status"] == "completed"
 
     creator_dash = client.get("/api/creator/dashboard", headers=creator_headers)
     assert creator_dash.status_code == 200
