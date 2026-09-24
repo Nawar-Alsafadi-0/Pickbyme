@@ -13,7 +13,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, get_db
-from .models import BrandProfile, Commission, CreatorOffer, CreatorProfile, Offer, Order, Payout, User
+from .models import BrandProfile, Commission, CreatorOffer, CreatorProfile, Offer, Order, PaymentAttempt, Payout, User
+from .payments import PaymentConfigurationError, PaymentProviderError, ThawaniClient
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 
 
@@ -99,6 +100,10 @@ class OrderIn(BaseModel):
     buyer_email: str = Field(min_length=3, max_length=255)
 
 
+class CheckoutIn(BaseModel):
+    checkout_key: str = Field(min_length=16, max_length=100)
+
+
 class VerificationIn(BaseModel):
     status: str
     note: str = ""
@@ -114,7 +119,6 @@ class PayoutDecisionIn(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
     bootstrap_admin()
     yield
 
@@ -331,27 +335,25 @@ def create_order(payload: OrderIn, db: Session = Depends(get_db)):
         amount_minor=offer.price_minor,
         currency=offer.currency,
         status="pending",
+        checkout_key=secrets.token_urlsafe(32),
     )
     db.add(order)
     db.commit()
     db.refresh(order)
-    return {"order_id": order.id, "status": order.status, "amount_minor": order.amount_minor, "currency": order.currency}
+    return {"order_id": order.id, "status": order.status, "amount_minor": order.amount_minor, "currency": order.currency, "checkout_key": order.checkout_key}
 
 
-@app.post("/api/orders/{order_id}/confirm")
-def confirm_order(order_id: int, user: User = Depends(require_role("brand", "admin")), db: Session = Depends(get_db)):
-    order = db.get(Order, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    offer = db.get(Offer, order.offer_id)
-    if user.role == "brand":
-        brand = db.scalar(select(BrandProfile).where(BrandProfile.user_id == user.id))
-        if not brand or offer.brand_id != brand.id:
-            raise HTTPException(status_code=403, detail="Order does not belong to this brand")
+def complete_order(db: Session, order: Order) -> None:
     if order.status == "completed":
-        return {"order_id": order.id, "status": order.status}
+        return
     if order.status != "pending":
-        raise HTTPException(status_code=409, detail="Only pending orders can be confirmed")
+        raise HTTPException(status_code=409, detail="Only pending orders can be completed")
+    existing = db.scalar(select(Commission).where(Commission.order_id == order.id))
+    if existing:
+        order.status = "completed"
+        order.completed_at = order.completed_at or datetime.utcnow()
+        return
+    offer = db.get(Offer, order.offer_id)
     link = db.get(CreatorOffer, order.creator_offer_id)
     creator_amount = order.amount_minor * offer.creator_commission_bps // 10000
     platform_amount = order.amount_minor * offer.platform_fee_bps // 10000
@@ -365,8 +367,115 @@ def confirm_order(order_id: int, user: User = Depends(require_role("brand", "adm
         brand_net_minor=order.amount_minor - creator_amount - platform_amount,
         status="available",
     ))
+
+
+@app.post("/api/orders/{order_id}/confirm")
+def confirm_order(order_id: int, user: User = Depends(require_role("brand", "admin")), db: Session = Depends(get_db)):
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    offer = db.get(Offer, order.offer_id)
+    if user.role == "brand":
+        brand = db.scalar(select(BrandProfile).where(BrandProfile.user_id == user.id))
+        if not brand or offer.brand_id != brand.id:
+            raise HTTPException(status_code=403, detail="Order does not belong to this brand")
+    complete_order(db, order)
     db.commit()
     return {"order_id": order.id, "status": order.status}
+
+
+@app.post("/api/orders/{order_id}/checkout")
+def create_payment_checkout(order_id: int, payload: CheckoutIn, request: Request, db: Session = Depends(get_db)):
+    order = db.get(Order, order_id)
+    if not order or not secrets.compare_digest(order.checkout_key, payload.checkout_key):
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != "pending":
+        raise HTTPException(status_code=409, detail="Order is not payable")
+    existing = db.scalar(
+        select(PaymentAttempt)
+        .where(PaymentAttempt.order_id == order.id, PaymentAttempt.provider == "thawani")
+        .order_by(PaymentAttempt.id.desc())
+    )
+    if existing and existing.status in {"unpaid", "created"} and existing.checkout_url:
+        return {"provider": "thawani", "checkout_url": existing.checkout_url, "status": existing.status}
+
+    provider = ThawaniClient()
+    if not provider.configured:
+        raise HTTPException(status_code=503, detail="Online payment is not configured yet")
+    offer = db.get(Offer, order.offer_id)
+    base = str(request.base_url).rstrip("/")
+    success_url = f"{base}/payments/thawani/return?order_id={order.id}&checkout_key={order.checkout_key}"
+    cancel_url = f"{base}/payments/thawani/cancel?order_id={order.id}&checkout_key={order.checkout_key}"
+    try:
+        session = provider.create_checkout(
+            order_id=order.id,
+            product_name=offer.title,
+            amount_minor=order.amount_minor,
+            currency=order.currency,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            buyer_name=order.buyer_name,
+            buyer_email=order.buyer_email,
+        )
+    except PaymentConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except PaymentProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    order.payment_provider = "thawani"
+    order.payment_reference = session.provider_reference
+    db.add(PaymentAttempt(
+        order_id=order.id,
+        provider="thawani",
+        provider_reference=session.provider_reference,
+        status=session.status,
+        checkout_url=session.checkout_url,
+    ))
+    db.commit()
+    return {"provider": "thawani", "checkout_url": session.checkout_url, "status": session.status}
+
+
+@app.get("/payments/thawani/return", response_class=HTMLResponse)
+def thawani_return(order_id: int, checkout_key: str, db: Session = Depends(get_db)):
+    order = db.get(Order, order_id)
+    if not order or not secrets.compare_digest(order.checkout_key, checkout_key):
+        raise HTTPException(status_code=404, detail="Order not found")
+    attempt = db.scalar(
+        select(PaymentAttempt)
+        .where(PaymentAttempt.order_id == order.id, PaymentAttempt.provider == "thawani")
+        .order_by(PaymentAttempt.id.desc())
+    )
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Payment session not found")
+    provider = ThawaniClient()
+    try:
+        paid = provider.is_paid(attempt.provider_reference)
+    except (PaymentConfigurationError, PaymentProviderError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if paid:
+        attempt.status = "paid"
+        complete_order(db, order)
+        db.commit()
+        return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width'><title>Payment complete</title><h1>Payment complete</h1><p>Your PickByMe order is confirmed.</p>")
+    attempt.status = "unpaid"
+    db.commit()
+    return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width'><title>Payment pending</title><h1>Payment not completed</h1><p>You can return to the creator store and try again.</p>", status_code=402)
+
+
+@app.get("/payments/thawani/cancel", response_class=HTMLResponse)
+def thawani_cancel(order_id: int, checkout_key: str, db: Session = Depends(get_db)):
+    order = db.get(Order, order_id)
+    if not order or not secrets.compare_digest(order.checkout_key, checkout_key):
+        raise HTTPException(status_code=404, detail="Order not found")
+    attempt = db.scalar(
+        select(PaymentAttempt)
+        .where(PaymentAttempt.order_id == order.id, PaymentAttempt.provider == "thawani")
+        .order_by(PaymentAttempt.id.desc())
+    )
+    if attempt and attempt.status != "paid":
+        attempt.status = "cancelled"
+        db.commit()
+    return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width'><title>Payment cancelled</title><h1>Payment cancelled</h1><p>No commission was created for this order.</p>")
 
 
 @app.post("/api/orders/{order_id}/refund")

@@ -6,6 +6,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://pickbyme:pickbyme@db:5432/pickbyme
       SECRET_KEY: ${SECRET_KEY:-change-me}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      THAWANI_SECRET_KEY: ${THAWANI_SECRET_KEY:-}
+      THAWANI_PUBLISHABLE_KEY: ${THAWANI_PUBLISHABLE_KEY:-}
+      THAWANI_API_BASE: ${THAWANI_API_BASE:-https://uatcheckout.thawani.om/api/v1}
+      THAWANI_CHECKOUT_BASE: ${THAWANI_CHECKOUT_BASE:-https://uatcheckout.thawani.om/pay}
     depends_on:
       db:
         condition: service_healthy
