@@ -118,7 +118,6 @@ class PayoutDecisionIn(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
     bootstrap_admin()
     yield
 
