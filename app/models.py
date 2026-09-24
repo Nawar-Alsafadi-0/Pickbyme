@@ -90,6 +90,17 @@ class PaymentAttempt(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class TrackingEvent(Base):
+    __tablename__ = "tracking_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creator_profiles.id"), index=True)
+    creator_offer_id: Mapped[int | None] = mapped_column(ForeignKey("creator_offers.id"), nullable=True, index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(30), index=True)
+    visitor_id: Mapped[str] = mapped_column(String(80), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Payout(Base):
     __tablename__ = "payouts"
     id: Mapped[int] = mapped_column(primary_key=True)

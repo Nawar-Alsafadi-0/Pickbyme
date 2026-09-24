@@ -4,7 +4,7 @@ import os
 import re
 import secrets
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, get_db
-from .models import BrandProfile, Commission, CreatorOffer, CreatorProfile, Offer, Order, PaymentAttempt, Payout, User
+from .models import BrandProfile, Commission, CreatorOffer, CreatorProfile, Offer, Order, PaymentAttempt, Payout, TrackingEvent, User
 from .payments import PaymentConfigurationError, PaymentProviderError, ThawaniClient
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 
@@ -145,7 +145,12 @@ def dashboard(request: Request):
 
 
 @app.get("/c/{slug}", response_class=HTMLResponse)
-def creator_store(slug: str, request: Request, db: Session = Depends(get_db)):
+def creator_store(
+    slug: str,
+    request: Request,
+    visitor_id: str | None = Cookie(default=None, alias="pbm_vid"),
+    db: Session = Depends(get_db),
+):
     creator = db.scalar(select(CreatorProfile).where(CreatorProfile.slug == slug, CreatorProfile.verification_status == "approved"))
     if not creator:
         raise HTTPException(status_code=404, detail="Creator not found")
@@ -154,7 +159,20 @@ def creator_store(slug: str, request: Request, db: Session = Depends(get_db)):
         .join(Offer, Offer.id == CreatorOffer.offer_id)
         .where(CreatorOffer.creator_id == creator.id, CreatorOffer.active.is_(True), Offer.status == "active")
     ).all()
-    return templates.TemplateResponse(request=request, name="creator_store.html", context={"creator": creator, "rows": rows})
+    vid = visitor_id or secrets.token_urlsafe(18)
+    db.add(TrackingEvent(creator_id=creator.id, event_type="store_view", visitor_id=vid))
+    for link, _offer in rows:
+        db.add(TrackingEvent(
+            creator_id=creator.id,
+            creator_offer_id=link.id,
+            event_type="offer_impression",
+            visitor_id=vid,
+        ))
+    db.commit()
+    response = templates.TemplateResponse(request=request, name="creator_store.html", context={"creator": creator, "rows": rows})
+    if not visitor_id:
+        response.set_cookie("pbm_vid", vid, max_age=31536000, samesite="lax", httponly=True)
+    return response
 
 
 @app.post("/api/auth/register", status_code=201)
@@ -317,7 +335,7 @@ def creator_dashboard(user: User = Depends(require_role("creator")), db: Session
 
 
 @app.post("/api/orders", status_code=201)
-def create_order(payload: OrderIn, db: Session = Depends(get_db)):
+def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_db)):
     link = db.scalar(select(CreatorOffer).where(CreatorOffer.tracking_code == payload.tracking_code, CreatorOffer.active.is_(True)))
     if not link:
         raise HTTPException(status_code=404, detail="Tracking code not found")
@@ -338,6 +356,14 @@ def create_order(payload: OrderIn, db: Session = Depends(get_db)):
         checkout_key=secrets.token_urlsafe(32),
     )
     db.add(order)
+    db.flush()
+    db.add(TrackingEvent(
+        creator_id=link.creator_id,
+        creator_offer_id=link.id,
+        order_id=order.id,
+        event_type="order_created",
+        visitor_id=request.cookies.get("pbm_vid") or secrets.token_urlsafe(18),
+    ))
     db.commit()
     db.refresh(order)
     return {"order_id": order.id, "status": order.status, "amount_minor": order.amount_minor, "currency": order.currency, "checkout_key": order.checkout_key}
@@ -509,6 +535,65 @@ def refund_order(order_id: int, user: User = Depends(require_role("brand", "admi
     order.refunded_at = datetime.utcnow()
     db.commit()
     return {"order_id": order.id, "status": order.status}
+
+
+@app.get("/api/creator/analytics")
+def creator_analytics(user: User = Depends(require_role("creator")), db: Session = Depends(get_db)):
+    creator = db.scalar(select(CreatorProfile).where(CreatorProfile.user_id == user.id))
+    views = db.scalar(
+        select(func.count(TrackingEvent.id))
+        .where(TrackingEvent.creator_id == creator.id, TrackingEvent.event_type == "store_view")
+    ) or 0
+    unique_visitors = db.scalar(
+        select(func.count(func.distinct(TrackingEvent.visitor_id)))
+        .where(TrackingEvent.creator_id == creator.id, TrackingEvent.event_type == "store_view")
+    ) or 0
+    completed_orders = db.scalar(
+        select(func.count(Order.id))
+        .join(CreatorOffer, Order.creator_offer_id == CreatorOffer.id)
+        .where(CreatorOffer.creator_id == creator.id, Order.status == "completed")
+    ) or 0
+    conversion = round((completed_orders / unique_visitors) * 100, 2) if unique_visitors else 0.0
+    return {
+        "store_views": views,
+        "unique_visitors": unique_visitors,
+        "completed_orders": completed_orders,
+        "conversion_rate": conversion,
+    }
+
+
+@app.get("/api/brand/analytics")
+def brand_analytics(user: User = Depends(require_role("brand")), db: Session = Depends(get_db)):
+    brand = db.scalar(select(BrandProfile).where(BrandProfile.user_id == user.id))
+    creator_offer_ids = list(db.scalars(
+        select(CreatorOffer.id)
+        .join(Offer, Offer.id == CreatorOffer.offer_id)
+        .where(Offer.brand_id == brand.id)
+    ).all())
+    offer_ids = list(db.scalars(select(Offer.id).where(Offer.brand_id == brand.id)).all())
+    impressions = 0
+    unique_visitors = 0
+    if creator_offer_ids:
+        impressions = db.scalar(
+            select(func.count(TrackingEvent.id))
+            .where(TrackingEvent.creator_offer_id.in_(creator_offer_ids), TrackingEvent.event_type == "offer_impression")
+        ) or 0
+        unique_visitors = db.scalar(
+            select(func.count(func.distinct(TrackingEvent.visitor_id)))
+            .where(TrackingEvent.creator_offer_id.in_(creator_offer_ids), TrackingEvent.event_type == "offer_impression")
+        ) or 0
+    completed_orders = 0
+    if offer_ids:
+        completed_orders = db.scalar(
+            select(func.count(Order.id)).where(Order.offer_id.in_(offer_ids), Order.status == "completed")
+        ) or 0
+    conversion = round((completed_orders / unique_visitors) * 100, 2) if unique_visitors else 0.0
+    return {
+        "offer_impressions": impressions,
+        "unique_visitors": unique_visitors,
+        "completed_orders": completed_orders,
+        "conversion_rate": conversion,
+    }
 
 
 @app.post("/api/creator/payouts", status_code=201)

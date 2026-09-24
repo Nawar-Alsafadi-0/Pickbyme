@@ -117,6 +117,10 @@ def test_full_verified_commerce_finance_flow():
     assert joined.status_code == 201
     tracking_code = joined.json()["tracking_code"]
 
+    creator_store = client.get("/c/nawar-picks")
+    assert creator_store.status_code == 200
+    assert "pbm_vid" in creator_store.cookies
+
     dashboard_page = client.get("/dashboard")
     assert dashboard_page.status_code == 200
 
@@ -187,6 +191,18 @@ def test_full_verified_commerce_finance_flow():
     brand_dash = client.get("/api/brand/dashboard", headers=brand_headers).json()
     assert brand_dash["gross_sales_minor"] == 25000
     assert brand_dash["brand_net_minor"] == 20000
+
+    creator_analytics = client.get("/api/creator/analytics", headers=creator_headers).json()
+    assert creator_analytics["store_views"] == 1
+    assert creator_analytics["unique_visitors"] == 1
+    assert creator_analytics["completed_orders"] == 1
+    assert creator_analytics["conversion_rate"] == 100.0
+
+    brand_analytics = client.get("/api/brand/analytics", headers=brand_headers).json()
+    assert brand_analytics["offer_impressions"] == 1
+    assert brand_analytics["unique_visitors"] == 1
+    assert brand_analytics["completed_orders"] == 1
+    assert brand_analytics["conversion_rate"] == 100.0
 
     stats = client.get("/api/admin/stats", headers=admin).json()
     assert stats["platform_revenue_minor"] == 2500

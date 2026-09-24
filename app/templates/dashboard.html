@@ -102,17 +102,17 @@ function metrics(items){$('metrics').innerHTML=items.map(([k,v])=>'<div class="m
 function verificationText(status){return status==='approved'?'Verified account':status==='rejected'?'Verification rejected':'Verification pending — selling actions stay locked until approval.';}
 
 async function loadBrand(){
-  const [stats,offers,orders]=await Promise.all([api('/api/brand/dashboard'),api('/api/brand/offers'),api('/api/brand/orders')]);
+  const [stats,offers,orders,analytics]=await Promise.all([api('/api/brand/dashboard'),api('/api/brand/offers'),api('/api/brand/orders'),api('/api/brand/analytics')]);
   $('verification-line').textContent=verificationText(stats.verification_status);
-  metrics([['Offers',stats.offers],['Orders',stats.orders],['Gross sales',money(stats.gross_sales_minor)],['Brand net',money(stats.brand_net_minor)]]);
+  metrics([['Offers',stats.offers],['Gross sales',money(stats.gross_sales_minor)],['Impressions',analytics.offer_impressions],['Unique visitors',analytics.unique_visitors],['Completed orders',analytics.completed_orders],['Conversion',analytics.conversion_rate+'%'],['Brand net',money(stats.brand_net_minor)]]);
   $('brand-offers').innerHTML=offers.map(o=>'<div class="row"><div><strong>'+o.title+'</strong><small>'+money(o.price_minor,o.currency)+' · Creator '+(o.creator_commission_bps/100).toFixed(1)+'%</small></div><span class="badge">'+o.status+'</span></div>').join('')||'<p>No offers yet.</p>';
   $('brand-orders').innerHTML=orders.map(o=>'<div class="row"><div><strong>'+o.offer_title+'</strong><small>@'+o.creator_slug+' · '+o.buyer_name+' · '+money(o.amount_minor,o.currency)+'</small></div><div class="actions">'+(o.status==='pending'?'<button onclick="confirmOrder('+o.id+')">Confirm</button>':o.status==='completed'?'<button class="secondary" onclick="refundOrder('+o.id+')">Refund</button>':'<span class="badge">'+o.status+'</span>')+'</div></div>').join('')||'<p>No orders yet.</p>';
 }
 
 async function loadCreator(){
-  const [stats,offers,payouts]=await Promise.all([api('/api/creator/dashboard'),api('/api/offers'),api('/api/creator/payouts')]);
+  const [stats,offers,payouts,analytics]=await Promise.all([api('/api/creator/dashboard'),api('/api/offers'),api('/api/creator/payouts'),api('/api/creator/analytics')]);
   $('verification-line').textContent=verificationText(stats.verification_status);
-  metrics([['Picks',stats.offers],['Sales',money(stats.sales_minor)],['Available',money(stats.available_balance_minor)],['Paid out',money(stats.paid_out_minor)]]);
+  metrics([['Store views',analytics.store_views],['Unique visitors',analytics.unique_visitors],['Completed orders',analytics.completed_orders],['Conversion',analytics.conversion_rate+'%'],['Available',money(stats.available_balance_minor)],['Paid out',money(stats.paid_out_minor)]]);
   $('wallet-copy').textContent='Available '+money(stats.available_balance_minor)+' · Reserved '+money(stats.reserved_balance_minor)+' · Lifetime earnings '+money(stats.earnings_minor);
   $('payout-button').disabled=stats.available_balance_minor<=0 || stats.verification_status!=='approved';
   const joined=new Set(stats.links.map(x=>x.offer_id));
