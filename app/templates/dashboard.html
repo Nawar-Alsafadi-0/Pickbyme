@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — PickByMe{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div id="auth-panel" class="panel auth-grid">
+    <form id="login-form" class="form-card">
+      <p class="eyebrow">SIGN IN</p>
+      <h2>Welcome back</h2>
+      <label>Email<input name="email" type="email" required></label>
+      <label>Password<input name="password" type="password" minlength="8" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <form id="register-form" class="form-card">
+      <p class="eyebrow">CREATE ACCOUNT</p>
+      <h2>Start selling</h2>
+      <label>Name<input name="display_name" required></label>
+      <label>Email<input name="email" type="email" required></label>
+      <label>Password<input name="password" type="password" minlength="8" required></label>
+      <label>Account type<select name="role"><option value="brand">Brand</option><option value="creator">Creator</option></select></label>
+      <label id="brand-name-row">Business name<input name="business_name"></label>
+      <label id="creator-slug-row" hidden>Creator handle<input name="slug" placeholder="your-name"></label>
+      <button type="submit">Create account</button>
+    </form>
+  </div>
+
+  <div id="app-panel" hidden>
+    <header class="dash-head">
+      <div><p class="eyebrow">CONTROL CENTER</p><h1 id="welcome">Dashboard</h1></div>
+      <button id="logout" class="secondary">Log out</button>
+    </header>
+    <div id="metrics" class="metric-grid"></div>
+    <section id="brand-panel" hidden>
+      <div class="panel">
+        <h2>Create an offer</h2>
+        <form id="offer-form" class="inline-form">
+          <input name="title" placeholder="Offer title" required>
+          <input name="description" placeholder="Short description">
+          <input name="price" type="number" step="0.001" min="0.001" placeholder="Price OMR" required>
+          <input name="creator_commission" type="number" step="0.1" min="0" max="90" value="10" placeholder="Creator %" required>
+          <button type="submit">Publish offer</button>
+        </form>
+      </div>
+      <div class="split-grid">
+        <div class="panel"><h2>Your offers</h2><div id="brand-offers" class="list"></div></div>
+        <div class="panel"><h2>Orders</h2><div id="brand-orders" class="list"></div></div>
+      </div>
+    </section>
+    <section id="creator-panel" hidden>
+      <div class="split-grid">
+        <div class="panel"><h2>Marketplace</h2><div id="marketplace" class="list"></div></div>
+        <div class="panel"><h2>Your picks</h2><div id="creator-links" class="list"></div></div>
+      </div>
+    </section>
+    <p id="status" class="status"></p>
+  </div>
+</section>
+<script>
+const tokenKey='pickbyme_token', roleKey='pickbyme_role';
+const $=id=>document.getElementById(id);
+const money=(minor,currency)=>currency==='OMR' ? (minor/1000).toFixed(3)+' OMR' : (minor/100).toFixed(2)+' '+currency;
+async function api(path, opts={}){
+  const token=localStorage.getItem(tokenKey);
+  const headers={'Content-Type':'application/json', ...(opts.headers||{})};
+  if(token) headers.Authorization='Bearer '+token;
+  const res=await fetch(path,{...opts,headers});
+  let data={}; try{data=await res.json();}catch(e){}
+  if(!res.ok) throw new Error(data.detail||'Request failed');
+  return data;
+}
+function setStatus(msg){$('status').textContent=msg||'';}
+function saveAuth(data){localStorage.setItem(tokenKey,data.access_token);localStorage.setItem(roleKey,data.role);renderApp();}
+function logout(){localStorage.removeItem(tokenKey);localStorage.removeItem(roleKey);location.reload();}
+$('logout').onclick=logout;
+document.querySelector('#register-form [name="role"]').onchange=e=>{const c=e.target.value==='creator';$('creator-slug-row').hidden=!c;$('brand-name-row').hidden=c;};
+$('login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{saveAuth(await api('/api/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))}));}catch(err){setStatus(err.message);}};
+$('register-form').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{saveAuth(await api('/api/auth/register',{method:'POST',body:JSON.stringify(f)}));}catch(err){setStatus(err.message);}};
+$('offer-form').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{await api('/api/offers',{method:'POST',body:JSON.stringify({title:f.title,description:f.description,price_minor:Math.round(Number(f.price)*1000),currency:'OMR',creator_commission_bps:Math.round(Number(f.creator_commission)*100),platform_fee_bps:1000})});e.target.reset();setStatus('Offer published.');await loadBrand();}catch(err){setStatus(err.message);}};
+async function confirmOrder(id){try{await api('/api/orders/'+id+'/confirm',{method:'POST'});setStatus('Order confirmed and commissions calculated.');await loadBrand();}catch(err){setStatus(err.message);}}
+async function joinOffer(id){try{const x=await api('/api/offers/'+id+'/join',{method:'POST'});setStatus('Added to your store: '+x.store_url);await loadCreator();}catch(err){setStatus(err.message);}}
+function metrics(items){$('metrics').innerHTML=items.map(([k,v])=>`<div class="metric"><span>${k}</span><strong>${v}</strong></div>`).join('');}
+async function loadBrand(){
+  const [stats,offers,orders]=await Promise.all([api('/api/brand/dashboard'),api('/api/brand/offers'),api('/api/brand/orders')]);
+  metrics([['Offers',stats.offers],['Orders',stats.orders],['Gross sales',money(stats.gross_sales_minor,'OMR')],['Brand net',money(stats.brand_net_minor,'OMR')]]);
+  $('brand-offers').innerHTML=offers.map(o=>`<div class="row"><div><strong>${o.title}</strong><small>${money(o.price_minor,o.currency)} · Creator ${(o.creator_commission_bps/100).toFixed(1)}%</small></div><span class="badge">${o.status}</span></div>`).join('')||'<p>No offers yet.</p>';
+  $('brand-orders').innerHTML=orders.map(o=>`<div class="row"><div><strong>${o.offer_title}</strong><small>@${o.creator_slug} · ${o.buyer_name} · ${money(o.amount_minor,o.currency)}</small></div>${o.status==='pending'?`<button onclick="confirmOrder(${o.id})">Confirm</button>`:`<span class="badge">${o.status}</span>`}</div>`).join('')||'<p>No orders yet.</p>';
+}
+async function loadCreator(){
+  const [stats,offers]=await Promise.all([api('/api/creator/dashboard'),api('/api/offers')]);
+  metrics([['Picks',stats.offers],['Sales',money(stats.sales_minor,'OMR')],['Earnings',money(stats.earnings_minor,'OMR')],['Store','/'+stats.slug]]);
+  const joined=new Set(stats.links.map(x=>x.offer_id));
+  $('marketplace').innerHTML=offers.map(o=>`<div class="row"><div><strong>${o.title}</strong><small>${money(o.price_minor,o.currency)} · Earn ${(o.creator_commission_bps/100).toFixed(1)}%</small></div>${joined.has(o.id)?'<span class="badge">Added</span>':`<button onclick="joinOffer(${o.id})">Add</button>`}</div>`).join('')||'<p>No offers available.</p>';
+  $('creator-links').innerHTML=stats.links.map(x=>`<div class="row"><div><strong>${x.title}</strong><small>Code ${x.tracking_code}</small></div><a class="button-link" href="${x.store_url}">Open store</a></div>`).join('')||'<p>No picks yet.</p>';
+}
+async function renderApp(){
+  const token=localStorage.getItem(tokenKey);if(!token)return;
+  try{const me=await api('/api/me');$('auth-panel').hidden=true;$('app-panel').hidden=false;$('welcome').textContent='Hi, '+me.display_name;$('brand-panel').hidden=me.role!=='brand';$('creator-panel').hidden=me.role!=='creator';if(me.role==='brand')await loadBrand();else await loadCreator();}catch(e){logout();}
+}
+renderApp();
+</script>
+{% endblock %}
