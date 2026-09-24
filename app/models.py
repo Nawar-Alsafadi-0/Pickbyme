@@ -72,9 +72,22 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     payment_provider: Mapped[str] = mapped_column(String(40), default="manual")
     payment_reference: Mapped[str] = mapped_column(String(160), default="")
+    checkout_key: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class PaymentAttempt(Base):
+    __tablename__ = "payment_attempts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(40), index=True)
+    provider_reference: Mapped[str] = mapped_column(String(180), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(30), default="created", index=True)
+    checkout_url: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Payout(Base):
