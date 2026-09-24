@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, get_db
 from .models import BrandProfile, Commission, CreatorOffer, CreatorProfile, Offer, Order, PaymentAttempt, Payout, User
-from .payments import PaymentConfigurationError, PaymentProviderError, ThawaniClient\nfrom .security import create_access_token, decode_access_token, hash_password, verify_password
+from .payments import PaymentConfigurationError, PaymentProviderError, ThawaniClient
+from .security import create_access_token, decode_access_token, hash_password, verify_password
 
 
 def slugify(value: str) -> str:
